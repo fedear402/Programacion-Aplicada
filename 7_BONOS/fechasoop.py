@@ -1,8 +1,9 @@
 class Fecha():
     daynames = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
-    monthnames = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre",
-                  "noviembre", "diciembre"]
+    monthnames = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", 
+                  "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
     weekends = ["sabado", "domingo"]
+    weekdays = ["lunes", "martes", "miercoles", "jueves", "viernes"]
     
     def __init__(self, fecha, orig=(1, 1, 1)):
         """ fecha : puede ser str, tuple o int
@@ -62,7 +63,16 @@ class Fecha():
         return not Fecha.later_earlier(self.fecha, other.fecha)
 
     def isweekend(self):
-        return self.dow in Fecha.weekends
+        return self.dow in [i[:3] for i in Fecha.weekends]
+    
+    def isweekday(self):
+        return self.dow in [i[:3] for i in Fecha.wekdays]
+    
+    def nextweekday(self):
+        if self.dow == "sab":
+            return self.add2date(2)
+        elif self.dow == "dom":
+            return self.add2date(1)
 
     def date2num(self, orig=(1,1,1)):
         return __class__.days_between(orig, self.fecha)
@@ -132,8 +142,10 @@ class Fecha():
             changed = True
         """ devuelva el tiempo entre la fecha self y la fecha dateB 
         entendiendo que si dateB es posterior a dateA debe devolverse un tiempo positivo 
-        y si es anterior un tiempo negativo. En units puede especificarse la forma en que se devolverá el tiempo. 
-        Puede devoverse en "d" (días) "dm" (días y meses) o "dmy" (días,meses y años) . Por default será endías.
+        y si es anterior un tiempo negativo. En units puede especificarse la forma en que se 
+        devolverá el tiempo. 
+        Puede devoverse en "d" (días) "dm" (días y meses) o "dmy" (días,meses y años) . 
+        Por default será en días.
         """
         days = __class__.days_between(self.fecha, dateB.fecha)
         months = 0
@@ -201,8 +213,8 @@ class Fecha():
     
     @staticmethod
     def dedoy(daynum:int, year:int):
-        """ Inverso de doy
-            toma una el ordinal del año de una fecha y devuelve a que fecha de ese año corresponde
+        """ Inverso de doy():
+        toma una el ordinal del año de una fecha y devuelve a que fecha de ese año corresponde
         """
         assert 1 <= daynum <= sum(__class__.monthlengths(year))
         aux = daynum
@@ -260,11 +272,8 @@ class Fecha():
             """
         start = (16, 10, 1582)
         return __class__.daynames[(__class__.days_between(start, fecha) - 3) % 7]
-    
+
+
 if __name__ == "__main__":
-    start = Fecha("3/7/2010")
-    print(start.fecha, start.add2date(-300, -35, -4))
-    print(start.fecha, start.add2date(300, 35, 4))
-    start = Fecha("2/5/2013")
-    end = Fecha("2/12/2030")
-    print(Fecha.schedule(start, end, 3))
+    start = Fecha("13/5/2023")
+    print(start.nextweekday().dow)
