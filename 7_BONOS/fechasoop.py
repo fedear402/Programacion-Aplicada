@@ -2,6 +2,7 @@ class Fecha():
     daynames = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
     monthnames = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre",
                   "noviembre", "diciembre"]
+    weekends = ["sabado", "domingo"]
     
     def __init__(self, fecha, orig=(1, 1, 1)):
         """ fecha : puede ser str, tuple o int
@@ -59,6 +60,9 @@ class Fecha():
     
     def __lt__(self, other):
         return not Fecha.later_earlier(self.fecha, other.fecha)
+
+    def isweekend(self):
+        return self.dow in Fecha.weekends
 
     def date2num(self, orig=(1,1,1)):
         return __class__.days_between(orig, self.fecha)
@@ -169,9 +173,10 @@ class Fecha():
         La salida debe ser una lista de objetos de tipo fecha.
         """
         leg = []
-        while end_date > start_date:
+        while start_date < end_date:
             leg.append(start_date)
             start_date = start_date.add2date(0, int(12/frequency))
+        leg.append(end_date)
         return leg
 
     @staticmethod
@@ -262,4 +267,4 @@ if __name__ == "__main__":
     print(start.fecha, start.add2date(300, 35, 4))
     start = Fecha("2/5/2013")
     end = Fecha("2/12/2030")
-    print(start.timetodate(end, units="dmy"))
+    print(Fecha.schedule(start, end, 3))
