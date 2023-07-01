@@ -87,7 +87,7 @@ class Bonos():
     def calendario(self):
         calendario = {}
         for i in range(len(self.coupon_dates)):
-            calendario[self.coupon_dates[i]] = self.coupon_rates[i] * list(self.residual().values())[i]
+            calendario[self.coupon_dates[i]] = self.coupon_rates[i] * list(self.residual().values())[i] + list(self.amort().values())[i]
         return calendario
 
 

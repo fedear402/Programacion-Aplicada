@@ -1,7 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-
 class Poly:
     def __init__(self, n=0, coefs=None):
         if coefs is None:

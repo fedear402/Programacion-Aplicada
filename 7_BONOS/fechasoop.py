@@ -47,6 +47,9 @@ class Fecha():
         assert 1 <= day <= __class__.monthlengths(year)[month]
         assert 1 <= month <= 12
 
+    def __hash__(self):
+        return hash(self.fecha)
+
     def __eq__(self, __value: object) -> bool:
         return self.fecha == __value.fecha
     
@@ -61,12 +64,19 @@ class Fecha():
     
     def __lt__(self, other):
         return not Fecha.later_earlier(self.fecha, other.fecha)
+    
+    def __ge__(self, other):
+        return Fecha.later_earlier(self.fecha, other.fecha) or self == other
+
+    def __le__(self, other):
+        return not Fecha.later_earlier(self.fecha, other.fecha) or self == other
+
 
     def isweekend(self):
         return self.dow in [i[:3] for i in Fecha.weekends]
     
     def isweekday(self):
-        return self.dow in [i[:3] for i in Fecha.wekdays]
+        return self.dow in [i[:3] for i in Fecha.weekdays]
     
     def nextweekday(self):
         if self.dow == "sab":
@@ -98,7 +108,7 @@ class Fecha():
             return f"{day}{sep}{month}{sep}{int(str(year)[:2])}"
         elif format == 3:
             return f"{day}{sep}{__class__.monthnames[month][:3]}{sep}{int(str(year)[:2])}"
-        
+
     def num2str(self, format=0, sep="-"):
         return self.date2str(format, sep)
     
@@ -130,65 +140,62 @@ class Fecha():
                 end_month = 12
                 end_year -= 1
         return __class__((end_day, end_month, end_year))
-        
+    
+    def yearfrac(self, other, basis=0):
+
+        days_between = self.days_between(self.fecha, other.fecha)
+
+        if basis == 0:  # 30/360
+            return days_between / 360
+        elif basis == 1:  # Actual/Actual
+            return days_between / sum(__class__.monthlengths(self.fecha[2]))
+        elif basis == 2:  # Actual/360
+            return days_between / 360
+        elif basis == 3:  # Actual/365
+            return days_between / 365
+
+
+
     def timetodate(self, dateB, units="d"):
         end_day, end_month, end_year = dateB.fecha[0], dateB.fecha[1], dateB.fecha[2]
         start_day, start_month, start_year = self.fecha[0], self.fecha[1], self.fecha[2]
+
         changed = False
         if __class__.later_earlier(self.fecha, dateB.fecha):
             start_day, end_day, = end_day, start_day
             start_month, end_month = end_month, start_month
             start_year, end_year = end_year, start_year
             changed = True
-        """ devuelva el tiempo entre la fecha self y la fecha dateB 
-        entendiendo que si dateB es posterior a dateA debe devolverse un tiempo positivo 
-        y si es anterior un tiempo negativo. En units puede especificarse la forma en que se 
-        devolverá el tiempo. 
-        Puede devoverse en "d" (días) "dm" (días y meses) o "dmy" (días,meses y años) . 
-        Por default será en días.
-        """
-        days = __class__.days_between(self.fecha, dateB.fecha)
-        months = 0
-        years = 0
-        if units == "d":
-            salida = days if not changed else (-days)
-
-        elif units == "dm":
-            while days > __class__.monthlengths(start_year)[start_month]:
-                days -= __class__.monthlengths(start_year)[start_month]
-                if start_month != 12:
-                    start_month += 1
-                else:
-                    start_month = 1
-                months += 1
-            salida =(days, months) if not changed else (-days, -months)
-
-        elif units == "dmy":
-            entireyears = 0
-            while days > __class__.monthlengths(start_year)[end_month]:
-                days -= __class__.monthlengths(start_year)[end_month]
-                if months != 12:
-                    months += 1
-                else:
-                    entireyears += 1
-                    months = 1
-                    if entireyears > 1:
-                        years += 1
-
-            salida = (days, months, years) if not changed else (-end_day, -months, -years)
         
-        return salida
+        day_diff = end_day - start_day
+        month_diff = end_month - start_month
+        year_diff = end_year - start_year
 
+        if day_diff < 0:
+            month_diff -= 1
+            day_diff += Fecha.monthlengths(start_year)[start_month]
+        if month_diff < 0:
+            year_diff -= 1
+            month_diff += 12
+
+        if units == "d":
+            days = Fecha.days_between(self.fecha, dateB.fecha)
+            return days if not changed else -days
+        elif units == "dm":
+            return (day_diff, month_diff) if not changed else (-day_diff, -month_diff)
+        elif units == "dmy":
+            return (day_diff, month_diff, year_diff) if not changed else (-day_diff, -month_diff, -year_diff) 
+        
     @staticmethod
     def schedule(start_date, end_date, frequency:int):
+        assert 1 <= frequency <= 12
         """ devuelva un calendario de pagos desde la fecha de inicio a la fecha final. 
         La salida debe ser una lista de objetos de tipo fecha.
         """
         leg = []
-        while start_date < end_date:
+        while start_date <= end_date:
             leg.append(start_date)
             start_date = start_date.add2date(0, int(12/frequency))
-        leg.append(end_date)
         return leg
 
     @staticmethod
@@ -258,22 +265,38 @@ class Fecha():
         gesamt = sum([sum(__class__.monthlengths(year)) for year in range(start_year, end_year + 1)])
         start_tail = __class__.doy(start_day, start_month, start_year)
         end_tail = sum(__class__.monthlengths(end_year)) - __class__.doy(end_day, end_month, end_year) - 1
-        return gesamt - start_tail - end_tail
+        return gesamt - start_tail - end_tail - 1
 
     @staticmethod
     def dayname(fecha:tuple):
         """ para conocer que dia fue cierta fecha:
             - toma los dias que hay desde el sabado 16/10/1582 (primer con el Calendario Georgiano) 
             y la fecha cuyo nombre queres saber.
-            - le resta 3 (mod 7) para tener el indice del dia en Fecha.daynames 
-                (EJ: el indice del 16/10/1582, deberia ser [5], sabado; 
-                primero, tomo los dias entre 16/10/1582 y la fecha objetivo --tmb. 16/10/1582--, que es 1;
-                al restarle 3, queda -2, lo que mod7 es 5)
+            - le resta 2 (mod 7) para tener el indice del dia en Fecha.daynames 
+            (EJ: el indice del 16/10/1582, deberia ser [5], sabado; 
+            primero, tomo los dias entre 16/10/1582 y la fecha objetivo --tmb. 16/10/1582--, que es 0;
+            al restarle 2, queda -2, lo que mod7 es 5)
             """
         start = (16, 10, 1582)
-        return __class__.daynames[(__class__.days_between(start, fecha) - 3) % 7]
+        return __class__.daynames[(__class__.days_between(start, fecha) - 2) % 7]
 
+    @staticmethod
+    def combinar(*args):
+        combined = []
+        for i in [item for sublist in args for item in sublist]:
+            if i not in combined:
+                combined.append(i)
+        combined.sort(key=lambda date : (date.fecha[2], date.fecha[1], date.fecha[0]))
+        return combined
 
 if __name__ == "__main__":
-    start = Fecha("13/5/2023")
-    print(start.nextweekday().dow)
+
+    a= Fecha.schedule(Fecha("22  . enero . 2026"), Fecha("22/07/2032"), 2)
+    b= Fecha.schedule(Fecha("22/07/2021"), Fecha("22/07/2032"), 2)
+    c=Fecha.schedule(Fecha("2/05/2002"), Fecha("8/01/2025"), 3)
+    # print(Fecha.combinar(a,b))
+    # print(a)
+    # print(f"bbbbbbbbbb{b}")
+    hoy = Fecha("30/5/2023")
+    prox = Fecha("22/07/2023")
+    print(hoy.yearfrac(prox, basis=3) * 2)
