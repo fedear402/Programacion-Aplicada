@@ -1,0 +1,136 @@
+class Portfolio(FixedIncome):
+    
+    def __init__(self, activos=list()):
+        self.activos = activos
+        super().__init__(activos)
+        
+    def calendar_match(self):
+        calendario=[]
+        for num,i in enumerate(self.activos):
+            x = self.activos[num].get_cashflow()["Fecha"].tolist()
+            for k, j in enumerate(x):
+                calendario.append(j)
+        calendario = sorted(list(set(calendario)), key=lambda x:(x[2],x[1],x[0]))
+        return calendario
+    
+    def FF(self, tir=[0],precio=[14860/247.8, 38000/495.73]):
+        flujos=dict()
+        calendario = self.calendar_match()
+        precios = []
+        for j,i in enumerate(precio):
+            nuevo = i*self.activos[j].specs.get("cantidad")
+            precios.append(nuevo)
+        for j, r in enumerate(calendario):
+            flujos[r] = 0
+        for num,i in enumerate(self.activos):
+            x = self.activos[num].get_cashflow()
+            for j, r in enumerate(calendario):
+                if r in x["Fecha"].tolist():
+                    flujos[r] += (x.loc[x['Fecha'] == r, 'Int'].iloc[0] + x.loc[x['Fecha'] == r, 'Amort'].iloc[0])*self.activos[num].specs.get("cantidad")
+
+        price = 0
+        if len(tir)>1 or tir[0]!=0:
+            for num, i in enumerate(self.activos):
+                x = self.activos[num]
+                price -= x.finder(0, 0.02, 0.0125,tir=tir[num])
+        elif len(precio)>1 or precio[0]!=0:
+            for num, i in enumerate(self.activos):
+                price -= precios[num]
+        for j, r in enumerate(calendario):
+            flujos[r] = price
+            break
+        return list(flujos.values())
+    
+    def inter(self):
+        flujos=dict()
+        calendario = self.calendar_match()
+        for j, r in enumerate(calendario):
+            flujos[r] = 0
+        for num,i in enumerate(self.activos):
+            x = self.activos[num].get_cashflow()
+            for j, r in enumerate(calendario):
+                if r in x["Fecha"].tolist():
+                    flujos[r] += (x.loc[x['Fecha'] == r, 'Int'].iloc[0])*self.activos[num].specs.get("cantidad")
+        return list(flujos.values())
+    
+    def amort(self):
+        flujos=dict()
+        calendario = self.calendar_match()
+        for j, r in enumerate(calendario):
+            flujos[r] = 0
+        for num,i in enumerate(self.activos):
+            x = self.activos[num].get_cashflow()
+            for j, r in enumerate(calendario):
+                if r in x["Fecha"].tolist():
+                    flujos[r] += (x.loc[x['Fecha'] == r, 'Amort'].iloc[0])*self.activos[num].specs.get("cantidad")
+        return list(flujos.values())
+    
+    def capi(self):
+        flujos=dict()
+        calendario = self.calendar_match()
+        for j, r in enumerate(calendario):
+            flujos[r] = 0
+        for num,i in enumerate(self.activos):
+            x = self.activos[num].get_cashflow()
+            for j, r in enumerate(calendario):
+                if r in x["Fecha"].tolist():
+                    flujos[r] += (x.loc[x['Fecha'] == r, 'Cap'].iloc[0])*self.activos[num].specs.get("cantidad")
+        return list(flujos.values())
+    
+    def VR(self):
+        flujos=dict()
+        capi= self.capi()
+        amort = self.amort()
+        calendario = self.calendar_match()
+        for j, r in enumerate(calendario):
+            flujos[r] = 0
+        for num,i in enumerate(self.activos):
+            x = self.activos[num].get_cashflow()
+            for j, r in enumerate(calendario):
+                if r in x["Fecha"].tolist() and j<1:
+                    flujos[r] += (x.loc[x['Fecha'] == r, 'VR'].iloc[0])*self.activos[num].specs.get("cantidad")
+                    print(x.loc[x['Fecha'] == r, 'VR'].iloc[0])
+                else:
+                    pass
+        flujos = list(flujos.values())
+        for j, r in enumerate(capi):
+            flujos[j] += -amort[j]+capi[j]
+            if j+2>len(capi):
+                break
+            flujos[j+1] = flujos[j] 
+        flujos[-1] = 0
+        return flujos
+    
+    def generar_periodos(self,origen=(14, 6, 2023)):
+       frac = []
+       
+       for i in self.calendar_match():
+           if  Fechas(i).datetonum("30/360")-Fechas(origen).datetonum("30/360")<0:
+               periodo = -Fechas(i, origen=origen).frac_año(self.activos[0].specs.get("daycount"))
+               frac.append(round(periodo,2))
+           else:
+               periodo = Fechas(i, origen=origen).frac_año(self.activos[0].specs.get("daycount"))
+               frac.append(round(periodo,2))     
+       return frac
+    
+    def duration(self,p=[0],tir=[0]):
+        duration = 0
+        counter = 0
+        for i,j in enumerate(self.activos):
+            if len(tir)>1 or tir[0]!=0:
+                self.activos[i].duration(tir=tir[i])
+                counter+=1
+            elif len(p)>1 or p[0]!=0:
+                duration+=self.activos[i].duration(price=p[i])
+                counter+=1
+        return duration/counter
+
+    def data(self,precios=[0]):
+        deff = pd.DataFrame({
+            "Fechas": self.calendar_match(),
+            "Inter": self.inter(),
+            "Capi": self.capi(),
+            "Amort":self.amort(),
+            "VR":self.VR(),
+            "Servicio": self.FF(precio=precios)})
+        return deff

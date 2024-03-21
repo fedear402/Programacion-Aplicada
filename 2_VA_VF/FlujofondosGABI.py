@@ -37,14 +37,13 @@ class FF:
         return self.van(tasa) * (1.0 + tasa) ** t
 
 
-# %%
 if __name__ == '__main__':
 
     a = FF((-80, 10, 10, 10, 10, 10, 10, 10, 10, 100))
 
     # dos formas de llamar al help    
     print((a.van).__doc__)
-    help(a.vt)
+
 
     # Busqueda de TIR...
     for x in range(1, 20): print(x, a.van(x / 100.0))

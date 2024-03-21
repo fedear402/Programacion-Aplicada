@@ -1,6 +1,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+
+
+def func(a):
+    return a + 2 
+
 class Poly:
     def __init__(self, n=0, coefs=None):
         if coefs is None:
@@ -315,6 +320,7 @@ class Poly:
             while b:
                 a, b = b, a % b
             return a
+        
 
         mcd_result = mcd(coefs[0], coefs[1])
         for number in coefs[2:]:
@@ -390,6 +396,17 @@ def MCD_poly(lista=None):
     return list(comunes)[0] if bool(comunes) else Poly()
 
 
+def convolucion(a, b):
+    b = b.reverse()
+    return [sum(a[i] * b[n-i] for n in range(len(a)+len(b)-1)) for i in range(len(a)+len(b)-1)]
+
+
+a = [3, 4, 5, 6]
+b = [1, 2, 3, 4, 5, 5]
+
+print(np.convolve(a, b))
+print(convolucion(a,b))
+
 
 # def MCM_main(a, b):
 #     mcd = MCD_poly([a, b])
@@ -409,66 +426,69 @@ def MCD_poly(lista=None):
 #         return comunes
 
 
-if __name__ == "__main__":
-    p = Poly(6, [-36, 0, 49, 0, -14, 0, 1])
-    p1 = Poly(2, [1, -3, 2])  # (x - 1)(x - 2)
-    p2 = Poly(3, [1, -5, 8, -4])  # (x - 1)(x - 2)^2
-    print(MCD_poly([p1, p2]))
-    p3 = Poly(2, [1, -4, 4])  # (x - 2)^2
-    p4 = Poly(3, [1, -6, 11, -6])  # (x - 1)(x - 2)(x - 3)
-    p5 = Poly(2, [1, -5, 6])  # (x - 2)(x - 3)
-    p6 = Poly(2, [2, 4, -8])
-    print("SALIDA", p.raices(), p)
-    poly1 = Poly(2, [1, -3, 2])  # OK
-    poly2 = Poly(3, [-6, 11, -6, 1])  # OK
-    poly3 = Poly(4, [4, -20, 28, -20, 4])  # OK
-    poly4 = Poly(5, [-1, 5, -10, 10, -5, 1])  # OK?
-    poly5 = Poly(6, [1, -6, 15, -20, 15, -6, 1])  # OK
-    poly6 = Poly(2, [1, -2, 1])  # OK
-    poly7 = Poly(2, [1, 0, -1])  # OK
-    poly8 = Poly(2, [1, -1, 0])  # OK
-    poly9 = Poly(2, [1, 0, 1])  # OK
-    poly10 = Poly(3, [1, -3, 3, -1])  # OK : multiplicidad 3
-    poly11 = Poly(3, [2, -7, 6, -1])  # OK
-    poly12 = Poly(4, [1, -4, 6, -4, 1])  # OK?
-    poly13 = Poly(4, [1, 2, 1, -6, -12])  # OK
-    poly14 = Poly(3, [1, -1, -1, 1])  # OK
-    poly15 = Poly(3, [1, -1, 1, 1])  # OK
-    poly16 = Poly(2, [4, -4, 1])  # OK
-    poly17 = Poly(2, [1, 2, 1])  # OK
-    poly18 = Poly(3, [-18, 11, 2, 1])  # OK
-    poly19 = Poly(5, [-2, 11, -12, 7, -1, 9])  # OK
-    poly20 = Poly(5, [81, -108, 54, -12, 1, 9])  # OK
-    poly21 = Poly(4, [1, 0, 1, 1, 1])  # OK
-    polys = [
-        poly1,
-        poly2,
-        poly3,
-        poly4,
-        poly5,
-        poly6,
-        poly7,
-        poly8,
-        poly9,
-        poly10,
-        poly11,
-        poly12,
-        poly13,
-        poly14,
-        poly15,
-        poly16,
-        poly17,
-        poly18,
-        poly19,
-        poly20,
-        poly21
-    ]
+# if __name__ == "__main__":
+#     p = Poly(6, [-36, 0, 49, 0, -14, 0, 1])
+#     p1 = Poly(2, [1, -3, 2])  # (x - 1)(x - 2)
+#     p2 = Poly(3, [1, -5, 8, -4])  # (x - 1)(x - 2)^2
+#     print(MCD_poly([p1, p2]))
+#     p3 = Poly(2, [1, -4, 4])  # (x - 2)^2
+#     p4 = Poly(3, [1, -6, 11, -6])  # (x - 1)(x - 2)(x - 3)
+#     p5 = Poly(2, [1, -5, 6])  # (x - 2)(x - 3)
+#     p6 = Poly(2, [2, 4, -8])
+#     print("SALIDA", p.raices(), p)
+#     poly1 = Poly(2, [1, -3, 2])  # OK
+#     poly2 = Poly(3, [-6, 11, -6, 1])  # OK
+#     poly3 = Poly(4, [4, -20, 28, -20, 4])  # OK
+#     poly4 = Poly(5, [-1, 5, -10, 10, -5, 1])  # OK?
+#     poly5 = Poly(6, [1, -6, 15, -20, 15, -6, 1])  # OK
+#     poly6 = Poly(2, [1, -2, 1])  # OK
+#     poly7 = Poly(2, [1, 0, -1])  # OK
+#     poly8 = Poly(2, [1, -1, 0])  # OK
+#     poly9 = Poly(2, [1, 0, 1])  # OK
+#     poly10 = Poly(3, [1, -3, 3, -1])  # OK : multiplicidad 3
+#     poly11 = Poly(3, [2, -7, 6, -1])  # OK
+#     poly12 = Poly(4, [1, -4, 6, -4, 1])  # OK?
+#     poly13 = Poly(4, [1, 2, 1, -6, -12])  # OK
+#     poly14 = Poly(3, [1, -1, -1, 1])  # OK
+#     poly15 = Poly(3, [1, -1, 1, 1])  # OK
+#     poly16 = Poly(2, [4, -4, 1])  # OK
+#     poly17 = Poly(2, [1, 2, 1])  # OK
+#     poly18 = Poly(3, [-18, 11, 2, 1])  # OK
+#     poly19 = Poly(5, [-2, 11, -12, 7, -1, 9])  # OK
+#     poly20 = Poly(5, [81, -108, 54, -12, 1, 9])  # OK
+#     poly21 = Poly(4, [1, 0, 1, 1, 1])  # OK
+#     polys = [
+#         poly1,
+#         poly2,
+#         poly3,
+#         poly4,
+#         poly5,
+#         poly6,
+#         poly7,
+#         poly8,
+#         poly9,
+#         poly10,
+#         poly11,
+#         poly12,
+#         poly13,
+#         poly14,
+#         poly15,
+#         poly16,
+#         poly17,
+#         poly18,
+#         poly19,
+#         poly20,
+#         poly21
+#     ]
     
-    for i in polys:
-        print(
-            f"NUEVA {i} MIA: raices {i.raices()} Deberia ser = {list(filter(np.isreal, np.polynomial.polynomial.polyroots(i.coefs)))}" + "\n")  # OK
-    f"NUEVA  Poly({i.n}, {i.coefs}):  {i} MIA: raices {i.raices()} factores {i.factores()} Deberia ser = {list(filter(np.isreal, np.polynomial.polynomial.polyroots(i.coefs)))}" + "\n" # OK
+#     for i in polys:
+#         print(
+#             f"NUEVA {i} MIA: raices {i.raices()} Deberia ser = {list(filter(np.isreal, np.polynomial.polynomial.polyroots(i.coefs)))}" + "\n")  # OK
+#     f"NUEVA  Poly({i.n}, {i.coefs}):  {i} MIA: raices {i.raices()} factores {i.factores()} Deberia ser = {list(filter(np.isreal, np.polynomial.polynomial.polyroots(i.coefs)))}" + "\n" # OK
     
     
     
-    print(f"NUEVA  Poly( {poly10.n}, {poly10.coefs}):  {poly10} MIA: raices {poly10.raices()} factores {poly10.factores()} Deberia ser = {list(filter(np.isreal, np.polynomial.polynomial.polyroots(poly10.coefs)))}" + "\n")
+#     print(f"NUEVA  Poly( {poly10.n}, {poly10.coefs}):  {poly10} MIA: raices {poly10.raices()} factores {poly10.factores()} Deberia ser = {list(filter(np.isreal, np.polynomial.polynomial.polyroots(poly10.coefs)))}" + "\n")
+# a = Poly(6, [-2, 0,6,0,-12,0,8])
+# print(a.raices())
+# %%

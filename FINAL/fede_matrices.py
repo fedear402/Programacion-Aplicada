@@ -1,11 +1,11 @@
 import sys
 import importlib
+from fede_poly import func
 
-path = "/Users/fedelopez/Library/CloudStorage/OneDrive-Personal/Documents/UDESA/05_Cuatrimestre/Prog_Aplicada/CODIGO/5_POLY"
-if not (path in sys.path):
-    sys.path.append(path)
 
-ply = importlib.import_module(name="PolynomialC")
+
+func(3)
+
 
 
 class MyArray:
@@ -328,7 +328,7 @@ class MyArray:
 
     def poly_identidad(self):
         if self.c == self.r:
-            identidad = [ply.Poly() if self.get_coords(i)[0] != self.get_coords(i)[1] else ply.Poly(1, [0, 1]) for i in
+            identidad = [Poly() if self.get_coords(i)[0] != self.get_coords(i)[1] else Poly(1, [0, 1]) for i in
                          range(len(self.lista))]
             return MyArray(identidad, self.r, self.c, self.by_row)
         else:

@@ -1,5 +1,3 @@
-import cProfile
-
 class Fecha():
     daynames = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
     monthnames = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", 
@@ -144,6 +142,12 @@ class Fecha():
         return __class__((end_day, end_month, end_year))
     
     def yearfrac(self, other, basis=0):
+        ''' basis:
+        0 : 30/360
+        1 : Actual/Actual
+        2 : Actual/360
+        3 : Actual/365
+        '''
 
         days_between = self.days_between(self.fecha, other.fecha)
 
@@ -290,25 +294,49 @@ class Fecha():
         return combined
 
 class FixedIncome():
-    def __init__(self, cashflow):
+    def __init__(self, cashflow:dict):
+        '''
+        cashflow: diccionario con fechas como keys y flujos como values
+        '''
         self.cashflow = cashflow
-        self.fechas = self.cashflow.keys()
+        self.fechas = list(self.cashflow.keys())
+        self.basis = {
+            '30/360':0,
+            'actual/actual':1,
+            'actual/360':2,
+            'actual/365':3
+        }
     
-    def discounted_cashflows(self, at, tir, freq, basis):
+    def discounted_cashflows(self, at, tir, freq=1, basis="30/360"):
         '''
         Devuelve to dos los flujos descontados a una tir a partir de una fecha at
         '''
         salida = {}
         for fecha in self.fechas:
             if at <= fecha:
-                descuento = ((1+tir/freq)**(at.yearfrac(fecha, basis)*freq))
-                salida[fecha] = self.flujo[fecha]/descuento
+                
+                descuento = ((1+tir/freq)**( at.yearfrac(fecha, self.basis[self.day_count]) * freq ))
+                salida[fecha] = self.cashflow[fecha]/descuento
         return salida
 
-    def precio(self, at, tir):
-        return sum(self.discounted_cashflows(at, tir).values())
+    def valores_futuros(self, since, val_to, tir, freq=1, basis="30/360"):
+        '''
+        Devuelve to dos los flujos capitalizados a una tir desde since hasta val_to
+        el valor existe en t=val_to
+        '''
+        salida = {}
+        for fecha in self.fechas:
+            if since <= fecha and val_to >= fecha:
+                capitalizo = ((1+tir/freq)**(fecha.yearfrac(val_to, self.basis[self.day_count])*freq))
+                salida[fecha] = self.cashflow[fecha]*capitalizo
+        return salida
 
-    def tir(self, at, price, primer=0.14, tol=0.001, max_iterations=100):
+    def precio(self, at, tir, freq=1, basis="30/360"):
+        '''
+        Devuelve el precio de un bono a una tir a partir de una fecha at'''
+        return sum(self.discounted_cashflows(at, tir, freq, basis).values())
+
+    def tir(self, at, price, freq=1, basis="30/360", primer=0.14, tol=0.0001, max_iterations=1000):
         """
         Calcula la TIR con Newton-Raphson, dado un precio
         """
@@ -317,14 +345,14 @@ class FixedIncome():
         for _ in range(max_iterations):
 
             #  Saca el dirty con el estimado
-            dirty_price = self.precio(at, est)
+            dirty_price = self.precio(at, est, freq, basis)
 
             #  Si es suficientente chico devuelve esa tir
             if abs(price - dirty_price) <= tol:
                 return est
 
             #  Calcula el dirty a un diferencial
-            dirty_price_higher = self.precio(at, est + tol)
+            dirty_price_higher = self.precio(at, est + tol, freq, basis)
 
             #  Con el diferencial saca la derivada
             derivative = (dirty_price_higher - dirty_price) / tol
@@ -332,50 +360,63 @@ class FixedIncome():
 
         raise ValueError("TIR no converge")
 
-    def duration(self, at, price, basis):
-        tir = self.tir(at, price)
+    def reinvertidos_descontados(self, since, at, tir, freq=1, basis="30/360"):
+        '''
+        reinvierte el cupon corrido y capitaliza el principal
+        '''
+        capitalizados = self.valores_futuros(since, at, tir, freq, basis)
+        descontados = self.discounted_cashflows(at, tir, freq, basis)
+        union = {**capitalizados, **descontados}
+        return  sum(union.values())
+
+    def dur(self, at, price, freq=1, basis="30/360"):
+        tir = self.tir(at, price, freq, basis)
         salida = []
         for fecha in self.fechas:
             if at <= fecha:
-                time = at.yearfrac(fecha,basis)
-                val = self.discounted_cashflows(at, tir)[fecha]
-                salida.append(val * time / price)
+                discounted = self.discounted_cashflows(at, tir, freq, basis)
+                salida.append(discounted[fecha] * at.yearfrac(fecha, self.basis[self.day_count])/ price)
         return sum(salida)
 
-    def duration_mod(self, at, price, basis):
-        tir = self.tir(at, price)
+    def mod_duration(self, at, price, freq=1, basis="30/360"):
+        tir = self.tir(at, price, freq, basis)
         salida = []
         for fecha in self.fechas:
             if at <= fecha:
-                time =  at.yearfrac(fecha, basis)
-                val = self.discounted_cashflows(at, tir)[fecha] *time
-                salida.append((val / price)/(1+tir))
+                discounted = self.discounted_cashflows(at, tir, freq, basis)
+                salida.append((discounted[fecha] * at.yearfrac(fecha, self.basis[self.day_count])/ price)/(1+tir))
         return sum(salida)
 
-    def current_yield(self, at, price, prox, until=(0,0,1)):
-        if clean:
-            price = price + self.cupon_corrido(at)
-        until = at.add2date(until[0], until[1], until[2])
-        next_index = Fecha.combinar(self.fechas, [at]).index(at)
-        last_index = Fecha.combinar(self.fechas, [until]).index(until)
+    def Duration2(self, at, tir = 0.0, disc = None, cap = None, dtasa = 0.001):
+        '''
+        at  es la fecha en la que esta valuando el bono. 
+        Lo que hago es chequear para varias fechas 
+        '''
+        fechas = [fecha for fecha in self.cashflow.keys() if fecha > at]
+        desc = tir if disc is None else disc
+        capi = tir if cap is None else cap
 
-        next_coupon_payments = self.main()[0][next_index:last_index]
-        current_yield = prox / price
+        # fech = []
+        # freq = 2
+        # for fecha in Fecha.schedule(at, list(self.cashflow.keys())[-1], 12):
+        #     for i in range(20):
+        #         fech.append(fecha.add2date(i, 0, 0))
+        
+        
+        for fecha in [fecha for fecha in  Fecha.schedule(at, list(self.cashflow.keys())[-1], 12)]:
+            capitalizados = self.valores_futuros(at, fecha, capi , freq, self.basis[self.day_count])
+            descontados = self.discounted_cashflows(fecha, desc, freq, self.basis[self.day_count])
+            valact = sum({**capitalizados, **descontados}.values())
 
-        return current_yield
+            capitalizados_sube = self.valores_futuros(at, fecha, capi + dtasa, freq, self.basis[self.day_count])
+            descontados_sube = self.discounted_cashflows(fecha, desc + dtasa, freq, self.basis[self.day_count])
+            valact_sube = sum({**capitalizados_sube, **descontados_sube}.values())
 
-    def capital_gains(self, at, price, clean=False, until=(0,0,1)):
-        if clean:
-            price = price + self.cupon_corrido(at)
-
-        tir = self.tir(at, price)
-
-        new_at = at.add2date(until[0], until[1], until[2])
-
-        f = self.dirty(new_at, tir)
-        capital_gains = (f - price) / price
-        return capital_gains
- 
+            capitalizados_baja = self.valores_futuros(at, fecha, capi - dtasa, freq, self.basis[self.day_count])
+            descontados_baja = self.discounted_cashflows(fecha, desc - dtasa, freq, self.basis[self.day_count])
+            valact_baja = sum({**capitalizados_baja, **descontados_baja}.values())
+            if abs(valact_sube - valact_baja) < 0.001:
+                return at.yearfrac(fecha, self.basis[self.day_count])
 
 ################################################################################################
 class Bonos(FixedIncome):
@@ -386,23 +427,20 @@ class Bonos(FixedIncome):
         los dates como una lista y los rates como un diccionario de forma {date:rate}.
         para eso estan las funciones que formatean, abajo.
         '''
-
         self.ticker = kwargs['ticker']
         self.issue_date = kwargs['issue_date']
         self.maturity = kwargs['maturity']
         self.face_value = kwargs['face_value']
         self.day_count = kwargs['day_count']
-
+        
         self.coupon_freq = kwargs['coupon_freq']  # frequencia de pago de cupones
-
         self.coupon_dates = kwargs['coupon_dates']  # fechas de pago de cupon
         self.coupon_rates = kwargs['coupon_rates']  # tasas de cupon
-
+        
         self.amort_dates = kwargs['amort_dates']  # fechas de amortizacion
         self.amort_rates = kwargs['amort_rates']  # tasas de amortizacion
-        self.settlement_plus = kwargs['settlement_plus']
-        self.currency = kwargs['currency']
 
+        self.currency = kwargs['currency']
         self.basis = {
             '30/360':0,
             'actual/actual':1,
@@ -428,7 +466,9 @@ class Bonos(FixedIncome):
         self.residual = {self.fechas[i]:self.all[4][i] for i in range(len(self.fechas))}
         self.flujo = {self.fechas[i]:[i+j for i, j in zip(self.all[1], self.all[3])][i] for i in range(len(self.fechas))}
 
-    #### FORMATO ###############################################################
+        super().__init__(self.flujo)
+
+    #### FORMATO #################
     def _amort_rates(self):
         """ Le podes dar en el kwargs una lista o un diccionario
         con fechas de key y el porcentaje como value.
@@ -524,7 +564,7 @@ class Bonos(FixedIncome):
         combinado = Fecha.combinar(coupons.keys(), amorts.keys())
         return [i if not i.isweekend() else i.nextweekday() for i in combinado]
 
-    #### MAIN ##################################################################
+    #### MAIN #####################
     def main(self):
         '''
         aca se arma el calendario total del bono que queda como atributo despues
@@ -563,8 +603,8 @@ class Bonos(FixedIncome):
 
         return idev, iper, cap, amortizado, residual
 
-    #### CALENDARIO ############################################################
-    def calendario_full(self):
+    #### CALENDARIO ##############
+    def calendario(self):
         '''
         para hacer el print
         '''
@@ -579,8 +619,8 @@ class Bonos(FixedIncome):
         }
         return data
 
-    def calendario_full_print(self, just=10):
-        cal = self.calendario_full()
+    def calendario_print(self, just=10):
+        cal = self.calendario()
         keys = []
         for i in cal.keys():
             keys.append(f"{i}")
@@ -599,18 +639,7 @@ class Bonos(FixedIncome):
                     values.append(f"{complet[j][i]}".ljust(just))
             print(" | ".join(values))
 
-    #### ANALISIS ##############################################################
-    def discounted_cashflows(self, at, tir):
-        '''
-        Devuelve todos los flujos descontados a una tir a partir de una fecha at
-        '''
-        salida = {}
-        for fecha in self.fechas:
-            if at <= fecha:
-                descuento = ((1+tir/self.coupon_freq)**(at.yearfrac(fecha, self.basis[self.day_count])*self.coupon_freq))
-                salida[fecha] = self.flujo[fecha]/descuento
-        return salida
-
+    #### ANALISIS ################
     def cupon_corrido(self, at):
         i = Fecha.combinar(self.fechas, [at]).index(at)
         last_pmt_date = self.fechas[i-1] if i-1 > 0 else at
@@ -619,56 +648,37 @@ class Bonos(FixedIncome):
         return next_pmt * last_pmt_date.yearfrac(at, self.basis[self.day_count]) * self.coupon_freq
 
     def clean(self, at:Fecha, tir):
-        return sum(self.discounted_cashflows(at, tir).values())
+        return super().precio(at, tir, self.coupon_freq, self.day_count)
 
     def dirty(self, at:Fecha, tir):
         return self.clean(at, tir) + self.cupon_corrido(at)
 
-    def tir(self, at, price, primer=0.14, tol=0.001, max_iterations=100):
-        """
-        Calcula la TIR con Newton-Raphson, dado un precio
-        """
-        est = primer
-
-        for _ in range(max_iterations):
-
-            #  Saca el dirty con el estimado
-            dirty_price = self.dirty(at, est)
-
-            #  Si es suficientente chico devuelve esa tir
-            if abs(price - dirty_price) <= tol:
-                return est
-
-            #  Calcula el dirty a un diferencial
-            dirty_price_higher = self.dirty(at, est + tol)
-
-            #  Con el diferencial saca la derivada
-            derivative = (dirty_price_higher - dirty_price) / tol
-            est = est - (dirty_price - price) / derivative
-
-        raise ValueError("TIR no converge")
-
     def duration(self, at, price, clean=False):
-        if clean:
-            price = price + self.cupon_corrido(at)
-        tir = self.tir(at, price)
-        salida = []
-        for fecha in self.fechas:
-            if at <= fecha:
-                salida.append(self.discounted_cashflows(at, tir)[fecha] * at.yearfrac(fecha, self.basis[self.day_count])/ price)
-        return sum(salida)
+        # if clean:
+        #     price = price + self.cupon_corrido(at)
+        # tir = super().tir(at, price, self.coupon_freq, self.day_count)
+        # salida = []
+        # for fecha in self.fechas:
+        #     if at <= fecha:
+        #         discounted = super().discounted_cashflows(at, tir, self.coupon_freq, self.day_count)
+        #         salida.append(discounted[fecha] * at.yearfrac(fecha, self.basis[self.day_count])/ price)
+        # return sum(salida)
+        return super().dur(at, price, self.coupon_freq, self.day_count)
 
     def duration_mod(self, at, price, clean=False):
-        if clean:
-            price = price + self.cupon_corrido(at)
-        tir = self.tir(at, price)
-        salida = []
-        for fecha in self.fechas:
-            if at <= fecha:
-                salida.append((self.discounted_cashflows(at, tir)[fecha] * at.yearfrac(fecha, self.basis[self.day_count])/ price)/(1+tir))
-        return sum(salida)
+        # if clean:
+        #     price = price + self.cupon_corrido(at)
+        # tir = super().tir(at, price, self.coupon_freq, self.day_count)
+        # salida = []
+        # for fecha in self.fechas:
+        #     if at <= fecha:
+        #         discounted = super().discounted_cashflows(at, tir, self.coupon_freq, self.day_count)
+        #         salida.append((discounted[fecha] * at.yearfrac(fecha, self.basis[self.day_count])/ price)/(1+tir))
+        return super().mod_duration(at, price, self.coupon_freq, self.day_count)
 
     def current_yield(self, at, price, clean=False, until=(0,0,1)):
+        '''
+        Devuelve el current yield hasta la fecha until, por default un año'''
         if clean:
             price = price + self.cupon_corrido(at)
         until = at.add2date(until[0], until[1], until[2])
@@ -681,10 +691,12 @@ class Bonos(FixedIncome):
         return current_yield
 
     def capital_gains(self, at, price, clean=False, until=(0,0,1)):
+        '''
+        Devuelve el capital gains hasta la fecha until, por default un año'''
         if clean:
             price = price + self.cupon_corrido(at)
 
-        tir = self.tir(at, price)
+        tir = super().tir(at, price, self.coupon_freq, self.day_count)
 
         new_at = at.add2date(until[0], until[1], until[2])
 
@@ -693,17 +705,29 @@ class Bonos(FixedIncome):
         return capital_gains
 
     def info(self, at, **informacion):
+        '''
+        Devuelve un diccionario con tir, precios, duration, current yield y capital gains
+        Se le puede dar informacion de clean, dirty o tir, cualquiera de las tres
+        informacion = 
+            {
+            'clean': precio limpio
+            'dirty': precio sucio
+            'tir': tasa interna de retorno
+            'until': fecha hasta la que se calcula el current yield o capital gains
+            }
+        
+        '''
         accrued = self.cupon_corrido(at)
 
         if informacion.get('clean') is not None:
             dirty = informacion['clean'] + accrued
             clean = informacion['clean']
-            tir = self.tir(at, dirty)
+            tir = super().tir(at, dirty, self.coupon_freq, self.day_count)
 
         if informacion.get('dirty') is not None:
             dirty = informacion['dirty']
             clean = informacion['dirty'] - accrued
-            tir = self.tir(at, dirty)
+            tir = super().tir(at, dirty, self.coupon_freq, self.day_count)
 
         if informacion.get('tir') is not None:
             dirty = self.dirty(at, informacion['tir'])
@@ -718,6 +742,8 @@ class Bonos(FixedIncome):
         duration_mod = self.duration_mod(at, dirty)
 
         return {
+            'ticker' : self.ticker,
+            'maturity' : self.maturity,
             'precio dirty' : dirty,
             'precio clean' : clean,
             'accrued' : accrued,
@@ -726,32 +752,59 @@ class Bonos(FixedIncome):
             'capital_gains' : capital_gains,
             'duration' : duration,
             'duration_modificada' : duration_mod
+            
         }
 
+########################################################################################################################################################
 class BonoDatabase(Bonos):
   def __init__(self, **db):
+    '''
+    db: diccionario con la informacion de los bonos a agregar a la base de datos'''
     self.database = {ticker:data for ticker, data in db.items()}
 
   def add(self, *nuevos):
+    '''
+    nuevos: lista con la informacion de los bonos a agregar a la base de datos'''
     for bono in nuevos:
       self.database[bono['ticker']] = bono
 
 ########################################################################################################################################################
 class Portfolio(FixedIncome):
     def __init__(self, database, **portbonos):
+        '''
+        database: base de datos de bonos
+        portbonos: diccionario con las cantidades de valores nominales de cada bono'''
+
+        #  guarda la base de datos con bonos
         self.database = database
+
+        #  guarda los nominales de cada bono
         self.laminas = {ticker:n for ticker, n in portbonos.items()}
+
+        #  guarda cada bono como objeto de clase Bonos
+        self.objetos_simple = {ticker:Bonos(**d) for ticker, d in self.database.database.items()}
+       
+        #  crea otra base de datos con las cantidades verdaderas
+        self.db_nominales = {ticker:d['face_value']*self.laminas[ticker] for ticker, d in self.database.database.items()}
+        for ticker, d in self.database.database.items():
+            d['face_value'] = self.db_nominales[ticker]
         self.objetos = {ticker:Bonos(**d) for ticker, d in self.database.database.items()}
+       
+        #  guarda los pesos de cada bono en la cartera 
         self.weights = {ticker:(n/sum(portbonos.values())) for ticker, n in portbonos.items()}
         super().__init__(self.cf())
 
     def dates(self):
+        '''
+        Calcula las fechas de pago del portafolio como la union de las fechas de pago de cada bono'''
         fech = []
         for bono in self.objetos.values():
             fech.append(bono.fechas)
         return Fecha.combinar(*fech)
 
     def cf(self):
+        '''
+        Calcula el flujo de caja del portafolio como la suma de los flujos de cada bono'''
         cashflows = {}
         for fecha in self.dates():
             cashflows[fecha] = 0
@@ -760,32 +813,227 @@ class Portfolio(FixedIncome):
             for date, cashflow in bond_cashflows.items():
                 cashflows[date] += cashflow
         return cashflows
+
+    def portfolio_duration(self, at, **prices):
+        '''
+        Calcula la duration del portafolio como un weighted average the cada duration'''
+        return sum([self.weights[ticker]*bono.duration(at, prices[ticker]) for ticker, bono in self.objetos_simple.items()])
     
+    def portfolio_duration_mod(self, at, **prices):
+        '''
+        Calcula la duration modificada del portafolio como un weighted average the cada duration'''
+        return sum([self.weights[ticker]*bono.duration_mod(at, prices[ticker]) for ticker, bono in self.objetos_simple.items()])
+    
+    def portfolio_price(self, at, **prices):
+        '''
+        Calcula el precio del portafolio como un weighted average the cada precio'''
+        return sum([n*prices[ticker] for ticker, n in self.laminas.items()])
+
+    def portfolio_tir(self, at, **prices):
+        '''
+        Calcula la tir del portafolio a partir del cashflow generado en cf()'''
+        return super().tir(at, self.portfolio_price(at, **prices))
+
+    def imunizar_dos(self, at, objetivo, tol=0.01, **prices):
+        assert len(self.objetos) == 2
+        '''
+        Busca los weights entre los dos portfolios dados que logra una duration objetivo
+        '''
+
+        initial_weights = [i for i in self.weights.values()]
+        main_weight = new_weight = initial_weights[0]
+        initial_duration = duration = self.portfolio_duration(at, **prices)
+        bonoA = list(self.objetos_simple.values())[0]
+        bonoB = list(self.objetos_simple.values())[1]
+        priceA = prices[list(self.objetos_simple.keys())[0]]
+        priceB = prices[list(self.objetos_simple.keys())[1]]
+        dif_entre = abs(bonoA.duration(at, priceA) - bonoB.duration(at, priceB))
+        for _ in range(1000):
+            if abs(duration - objetivo) < tol:
+                return f"deberia distribuir en {list(self.laminas.keys())[0]}, la cantidad: {new_weight * sum(self.laminas.values())} y en {list(self.laminas.keys())[1]}, la cantidad: {(1-new_weight) * sum(self.laminas.values())}"
+            else:
+                if objetivo > duration:
+                    new_weight -= dif_entre/1000
+                else:
+                    new_weight += dif_entre/1000
+                new_weight = max(0, min(new_weight, 1))
+                # print("TEST new weight", new_weight)
+                duration = new_weight * bonoA.duration(at, priceA) + (1 - new_weight) * bonoB.duration(at, priceB)
+
+                # print("TEST duration", duration, objetivo)
+ 
+########################################################################################################################################################
+# EJERCICO 1
+
+def ejercicio1(x, m, freq=2, precio_objetivo=100, vn=100, n_amorts=3, 
+                tir_objetivo=0.075, duration_objetivo=6, bono_start=Fecha("9/8/2023"), tol=0.01, max_iter=100):
+    '''
+    
+    '''
+    cupones = Fecha.schedule(bono_start, m, freq)
+    rates = {}
+    rates[cupones[0]] = x/freq
+    rates[cupones[1]] = x/freq
+    rates[cupones[2]] = (x + 0.01)/freq
+    rates[cupones[3]] = (x + 0.01)/freq
+    rates[cupones[4]] = (x + 0.02)/freq
+    rates[cupones[5]] = (x + 0.02)/freq
+    for fecha in cupones[5:]:
+        rates[fecha] = (x + 0.03)/freq
+
+    bono_inicial = Bonos(**{
+        'ticker' : "UDESA_1",
+        'issue_date' : bono_start,
+        'maturity' : m,
+        
+        'coupon_rates' : rates,
+        'coupon_dates' : cupones,
+        'coupon_freq' : freq,
+
+        'irregular_first_coupon' : False,
+
+        'amort_dates' : Fecha.schedule(m.add2date(0, 0, -1), m, freq),
+        'amort_rates' : "lineal",
+
+        'face_value' : vn,
+        'day_count' : "30/360",  # asumo
+        'settlement_plus' : 0,
+        'currency' : "USD",
+
+        'capitaliza' : False,
+
+    }
+    )
+
+    precio = bono_inicial.clean(bono_start, tir_objetivo)
+    duration = bono_inicial.duration(bono_start, precio)
+
+
+    if abs(duration - duration_objetivo) > 0.01:
+        if duration < duration_objetivo:
+            return ejercicio1(x,  m.add2date(0,6,0))
+        
+    dif = abs(precio - precio_objetivo)
+    if abs(precio - precio_objetivo) > 0.01:
+        if precio < precio_objetivo:
+            return ejercicio1(x + dif/1000, m)
+        if precio > precio_objetivo:
+            return ejercicio1(x - dif/1000, m)
+    else:
+        print(bono_inicial.calendario_print())
+        return bono_inicial.info(bono_start, tir=tir_objetivo)
     
 
-##########################################################################################
-cupones = {}
-cupones[Fecha("9 enero 2020")] = 0.0125/2
-cupones[Fecha("9 julio 2020")] = 0.0125/2
-cupones[Fecha("9 enero 2021")] = 0.0125/2
-cupones[Fecha("9 julio 2021")] = 0.02/2
-cupones[Fecha("9 enero 2022")] = 0.02/2
-cupones[Fecha("9 julio 2022")] = 0.03875/2
-cupones[Fecha("9 enero 2023")] = 0.03875/2
-cupones[Fecha("9 julio 2023")] = 0.0425/2
-cupones[Fecha("9 enero 2024")] = 0.0425/2
-tanda_final = Fecha.schedule(Fecha("9 julio 2024"), Fecha("9/1/2038"), 2)
-for i in range(len(tanda_final)):
-    cupones[tanda_final[i]] = 0.025
+for key, val in ejercicio1(0.0, Fecha("9/8/2026")).items():
+    print("ej1: ", key, val)
 
-issue = Fecha("4/9/2020")
-first = Fecha("9/1/2020")
-amort_start = Fecha("09/7/2027")
-mat = Fecha("9/1/2038")
+## LA DURATION DA BASTANTE LEJOS, PORQUE PRIMERO ENCUENTRO UNA MATURITY QUE CON X = 0% ME DE MAS O MENOS
+## ESA DURATION Y RECIEN DESPUES LO PONGO A EDITAR LOS CUPONES CON X. NO ES IDEAL
+
+##################################################################################################################
+# # EJERCICO 2
+
+# '''
+# (1) Del 31-dic-03 (inclusive) al 31-dic-08 (exclusive): 3,97% pago en efvo., 4,31% capitaliza
+# (2) Del 31-dic-08 (inclusive) al 31-dic-13 (exclusive): 5,77% pago en efvo., 2,51% capitaliza
+# (3) Del 31-dic-13 (inclusive) al 31-dic-33 (exclusive): 8,28% pago en efvo.
+# '''
+# freq = 2
+# issue = Fecha("31/12/2003")
+# mat = Fecha("31/12/2033")
+# amort_start = Fecha("30-jun-2024")
+# tir = 0.3
+# cupones = {}
+# for fecha in Fecha.schedule(Fecha("31-dic-2003"),Fecha("30-jun-2008"),2 ):
+#     cupones[fecha] = 0.0397/2
+
+# for fecha in Fecha.schedule(Fecha("31-dic-2008"),Fecha("30-jun-2013"),2 ):
+#     cupones[fecha] = 0.0577/2
+
+# for fecha in Fecha.schedule(Fecha("31-dic-2013"),Fecha("30-jun-2033"),2 ):
+#     cupones[fecha] = 0.0828/2
+
+
+# capitalizaciones = {}
+# for fecha in Fecha.schedule(Fecha("31-dic-2003"),Fecha("30-jun-2008"),2 ):
+#     capitalizaciones[fecha] = 0.0431/2
+
+# for fecha in Fecha.schedule(Fecha("31-dic-2008"),Fecha("30-jun-2013"),2 ):
+#     capitalizaciones[fecha] = 0.0251/2
+
+
+# today = Fecha("22/6/2023")
+
+
+# DICA = Bonos(**{
+#     'ticker' : "DICA",
+#     'issue_date' : Fecha("31/12/2003"),
+#     'maturity' : mat,
+    
+#     'coupon_rates' : cupones,
+#     'coupon_dates' : None,
+#     'coupon_freq' : freq,
+
+#     'irregular_first_coupon' : False,
+
+#     'amort_dates' : Fecha.schedule(amort_start, Fecha("30/12/2033"), freq),
+#     'amort_rates' : "lineal",
+
+#     'face_value' : 100,
+#     'day_count' : "30/360",  # asumo
+#     'settlement_plus' : 0,
+#     'currency' : "USD",
+
+#     'capitaliza' : True,
+#     'cap_rates' : capitalizaciones,
+#     'cap_dates' : capitalizaciones.keys()
+
+# }
+# )
+
+# for key, val in DICA.info(today, tir=tir).items():
+#     print("DICA", key, val)
+# print("reinvertir y capitalizar a la tir", DICA.Duration2(today, tir=tir))
+# print("reinversion a 0.18", DICA.Duration2(today, cap=0.18, tir=tir))
+
+##################################################################################################################
+'''
+i. Del 15 de Mayo de 2020 (inclusive) al 15 de Noviembre de 2022 (exclusive): CERO POR CIENTO (0%).
+
+ii. Del 15 de Noviembre de 2022 (inclusive) al 15 de Noviembre de 2025 (exclusive):
+CERO COMA CINCUENTA POR CIENTO (0,50%).
+ii.
+Del 15 de Noviembre de 2025 (inclusive) al 15 de Noviembre de 2027 (exclusive):
+UNO POR CIENTO (1,00%).
+iv.
+Del 15 de Noviembre de 2027 (inclusive) al 15 de Noviembre de 2030 (exclusive):
+UNO COMA SETENTA Y CINCO POR CIENTO (1,75%).
+'''
 freq = 2
+issue = Fecha("15/05/2020")
+mat = Fecha("15/11/2030")
 
-bonodataAE38 = {
-    'ticker' : "AE38",
+cupones = {}
+for fecha in Fecha.schedule(Fecha("15/05/2020"),Fecha("15/05/2022"),2 ):
+    cupones[fecha] = 0
+
+for fecha in Fecha.schedule(Fecha("15/11/2022"),Fecha("15-05-2025"),2 ):
+    cupones[fecha] = 0.005/2
+
+for fecha in Fecha.schedule(Fecha("15/11/2025"),Fecha("15-05-2027"),2 ):
+    cupones[fecha] = 0.01/2
+
+for fecha in Fecha.schedule(Fecha("15-11-2027"),Fecha("15-05-2030"),2 ):
+    cupones[fecha] = 0.0175/2
+
+
+
+
+today = Fecha("06/11/2023")
+
+
+GD30 = Bonos(**{
+    'ticker' : "GD30",
     'issue_date' : issue,
     'maturity' : mat,
     
@@ -795,88 +1043,24 @@ bonodataAE38 = {
 
     'irregular_first_coupon' : False,
 
-    'amort_dates' : Fecha.schedule(amort_start, mat, 2),
+    'amort_dates' : [Fecha('15-11-2026'), Fecha('15-11-2027'), Fecha('15-11-2028'), Fecha('15-11-2029'), Fecha('15-11-2030')],
     'amort_rates' : "lineal",
 
-    'face_value' : 100,
-    'day_count' : "30/360",
-    'settlement_plus' : 2,
-    'currency' : "USD",
+    'face_value' : 100000,
+    'day_count' : "30/360", 
+    'settlement_plus' : 0,
+    'currency' : "ARS",
 
     'capitaliza' : False,
+    'cap_rates' : None,
+    'cap_dates' : None
 
+}
+)
 
-    }
-today = Fecha("14-06-2023")
-AE38 = Bonos(**bonodataAE38)
-tir = 0.13676166481326904
-corr = AE38.cupon_corrido(today)
-clean = 59.9677159-corr
+tir = 0.5
+precio = 25650
+for key, val in GD30.info(today, tir=tir).items():
+    print("GD30", key, val)
 
-
-print(AE38.calendario_full_print())
-print("dirty", AE38.dirty(today, tir))
-print("tir", AE38.tir(today, 59.9677159)) 
-print("corrido", corr)
-print("current yield", AE38.current_yield(today, 59.9677159))
-print("capital gains", AE38.capital_gains(today, 59.9677159))
-print("duration", AE38.duration(today, 59.9677159))
-print("mod duration", AE38.duration_mod(today, 59.9677159))
-print()
-for key, value in AE38.info(today, dirty=59.9677159).items():
-    print(key,value)
-##########################################################################################
-amorts={}
-for fecha in Fecha.schedule(Fecha("8/9/2022"), Fecha("8/9/2024"), 2):
-    amorts[fecha] = 0.133
-amorts[Fecha("8/3/2025")] = 0.335
-
-first = Fecha("8/3/2022")
-mat = Fecha("8/3/2025")
-
-freq = 2
-
-bonodataCP170 = {
-    'ticker' : "CP170",
-    'issue_date' : None,
-    'maturity' : mat,
-    
-    'coupon_rates' : 0.095,
-    'coupon_dates' : Fecha.schedule(first, mat, 2),
-    'coupon_freq' : freq,
-
-    'irregular_first_coupon' : False,
-
-    'amort_dates' : None,
-    'amort_rates' : amorts,
-
-    'face_value' : 100,
-    'day_count' : "30/360",
-    'settlement_plus' : 2,
-    'currency' : "USD",
-
-    'capitaliza' : False,
-
-
-    }
-today = Fecha("14-06-2023")
-CP170 = Bonos(**bonodataCP170)
-tir = 0.13676166481326904
-corr = CP170.cupon_corrido(today)
-dirty = 38000/495.73
-clean = dirty-corr
-
-for key, value in CP170.info(today, dirty=dirty).items():
-    print(key,value)
-main_database = BonoDatabase()
-main_database.add(bonodataCP170, bonodataAE38)
-
-for key ,val in main_database.database.items():
-    print(key)
-    print()
-    print(val)
-    print()
-    print()
-
-myport = Portfolio(main_database, AE38 = 5000, CP170 = 2000)
-print(myport.duration())
+GD30.calendario_print()
